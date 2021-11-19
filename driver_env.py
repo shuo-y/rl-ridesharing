@@ -8,25 +8,19 @@ class DriverEnv(gym.Env):
     IDLE = 0
     TAKE_RIDER = 1
     TAKE_FOOD = 2
-    def __init__(self, total_time, rider_dict, food_dict, max_ride_requests=10, max_food_requests=10, max_food_serv=5):
+    def __init__(self, total_time, order_dict, max_repositions = 4, max_ride_requests=2):
         super(DriverEnv, self).__init__()
         self.total_time = total_time
         self.timestamp = 0
-        self.locations = 6
+        self.locations = max_repositions
         self.max_ride_requests = max_ride_requests  # maximum rider requests at a timestamp
-        self.max_food_requests = max_food_requests  # maximum food requests at a timestamp
-        self.max_food_serve =  max_food_serv # maximum food deliver destinations of a food requests
         # Total possible action
-        # action_dim = 1 + self.max_ride_requests + math.comb(self.max_food_requests, self.max_food_serve)
-        self.action_space = spaces.Discrete(self.locations * self.max_ride_requests * self.max_food_requests)
-        obs_space = self.max_ride_requests * 3 + self.max_food_requests * (2 + self.max_food_serve)
-        self.observation_space = spaces.Box(low=-1, high=1000, shape=(obs_space,), dtype=np.float32)
-        self.world = np.zeros((200, 200))
-        self.has_rider = False
-        self.trip_map = rider_dict  # Mapping timestamp to trip orders
-        self.food_map = food_dict # Mapping timestamp to food orders
+        self.action_space = spaces.Discrete(self.locations + self.max_ride_requests)
+        obs_space = self.max_ride_requests * 3  
+        self.observation_space = spaces.Box(low=-1, high=10000, shape=(obs_space,), dtype=np.float32)
+        self.trip_map = order_dict  # Mapping timestamp to trip orders
         self.cur_available_rider = 1
-        self.cur_location = 0
+        self.cur_location = 1 # TODO should be sampled from several locations
 
 
     def reset(self):
@@ -40,7 +34,7 @@ class DriverEnv(gym.Env):
         Dummy estimate the travel time, distance from src to dst
         Both dst and src are integers
         """
-        return dst - src
+        return 10
 
     def estimate_trip(self, trip, src):
         """
@@ -58,15 +52,10 @@ class DriverEnv(gym.Env):
         dur = estimate_time(trip['src'], src)
         time += dur
         reward = -2.5 * dur
-        src = trip['src']
-        for dst in trip['dst_list']:
-           dur = estimate_time(dst, src)
-           time += dur
-           reward += -2.5 * dur
-           src = dst
-
-        reward += trip['earning']
-        return time, reward, src
+        time += trip['dur']
+        reward += -2.5 * dur
+        reward += trip['earnings']
+        return time, reward, trip['dst']
 
     def get_obs(self):
         """
@@ -74,64 +63,56 @@ class DriverEnv(gym.Env):
         """
 
         trip_orders = self.trip_map.get(self.timestamp, [])
-        food_orders = self.food_map.get(self.timestamp, [])
 
-        riders = [[trip_orders[i]['src'], trip_orders[i]['dst_list'][0], trip_orders[i]['earning']] if i < len(trip_orders) else [0, 0, 0] for i in range(self.max_ride_requests)]
+        riders = [[trip_orders[i]['src'], trip_orders[i]['dst'], trip_orders[i]['earnings']] if i < len(trip_orders) else [0, 0, 0] for i in range(self.max_ride_requests)]
         riders = np.array(riders, dtype=np.int32).flatten()
 
-        #print(riders)
-        food = [([food_orders[i]['src'], food_orders[i]['earning']] +
-                    [food_orders[i]['dst_list'][k] if k < len(food_orders[i]['dst_list']) else 0 for k in range(self.max_food_serve)])
-                         if i < len(food_orders) else ([0, 0] + [0 for k in range(self.max_food_serve)])
-                            for i in range(self.max_ride_requests)]
-        #print(food)
-        food = np.array(food, dtype=np.int32).flatten()
-
-        ret = np.concatenate((riders, food), axis=0)
         
-        return ret
+        return riders
 
-    def parse_action(self, action):
+    def parse_action_old(self, action):
         dst_loc = action / (self.max_ride_requests * self.max_food_requests)
         request_trip = (action % (self.max_ride_requests * self.max_food_requests)) / self.max_food_requests
         request_food = action % self.max_food_requests
         return dst_loc, request_trip, request_food
+
+
+    def sample_trip(self, trip_orders):
+        """
+        add randomness for the trip
+        """
+        return trip_orders
 
     def step(self, action):
         """
         action (dst_block_id, trip, food)
         """
         trip_orders = self.trip_map.get(self.timestamp, [])
-        food_orders = self.food_map.get(self.timestamp, [])
 
+        trip_orders = self.sample_trip(trip_orders) # Sample from trip orders
         idle = True
         reward = 0
-        dst_loc, request_trip, request_food = self.parse_action(action)
-        if len(trip_orders) > 0 and request_trip > 0 and request_trip < len(trip_orders):
+        
+        if (action > self.locations and action - self.locations < len(trip_orders)):
+            # Take a ride requests
             idle = False
-            trip = trip_orders[request_trip]
+            trip = trip_orders[action - self.max_repositions]
             duration, reward, dst = self.estimate_trip(trip, self.cur_location)
             self.timestamp += duration
             self.cur_location = dst
-            loc = self.cur_location
-        if len(food_orders) > 0 and request_food > 0 and request_food < len(food_orders):
-            idle = False
-            food = food_orders[request_food]
-            duration, reward, dst = self.estimate_trip(food, self.cur_location)
-            self.timestamp += duration
-            self.cur_location = dst
-            loc = self.cur_location
         else:
             # idle for one timestamp
-            duration =  self.estimate_time(dst_loc, self.cur_location)
-            self.timestamp += 1 + duration
+            # Action represents the locations
+            repo_loc = action + 1
+            duration =  self.estimate_time(repo_loc, self.cur_location)
+            self.timestamp +=  duration
             reward = -2.5 * duration
-            self.cur_location = dst_loc
+            self.cur_location = repo_loc
 
         done = False
         if self.timestamp >= self.total_time:
             done = True
-        info = {}
+        info = {'loc': self.cur_location, 'time': self.timestamp}
         return self.get_obs(), reward, done, info
 
     def render(self, mode='console'):
@@ -143,17 +124,11 @@ class DriverEnv(gym.Env):
 if __name__ == '__main__':
     rider = {}
     rider[1] = [{}]
-    rider[1][0]['earning'] = 300
+    rider[1][0]['earnings'] = 300
     rider[1][0]['src'] = 100
-    rider[1][0]['dst_list'] = [200,]
+    rider[1][0]['dst'] = 200
 
-    food = {}
-    food[1] = [{}]
-    food[1][0]['earning'] = 200
-    food[1][0]['src'] = 100
-    food[1][0]['dst_list'] = [200, 300]
-
-    env = DriverEnv(24 * 6, rider, food)
+    env = DriverEnv(24 * 6, rider)
 
     print(env.observation_space.shape)
     print(env.action_space.shape)
@@ -192,8 +167,8 @@ if __name__ == '__main__':
     net = Net(state_shape=state_shape, action_shape=action_shape, hidden_sizes=[128, 128, 128])
     optim = torch.optim.Adam(net.parameters(), lr=lr)
 
-    train_envs = ts.env.DummyVectorEnv([lambda: DriverEnv(24 * 6, rider, food) for _ in range(train_num)])
-    test_envs = ts.env.DummyVectorEnv([lambda: DriverEnv(24 * 6, rider, food) for _ in range(test_num)])
+    train_envs = ts.env.DummyVectorEnv([lambda: DriverEnv(24 * 6, rider) for _ in range(train_num)])
+    test_envs = ts.env.DummyVectorEnv([lambda: DriverEnv(24 * 6, rider) for _ in range(test_num)])
 
     policy = ts.policy.DQNPolicy(net, optim, gamma, n_step, target_update_freq=target_freq)
     train_collector = ts.data.Collector(policy, train_envs, ts.data.VectorReplayBuffer(buffer_size, train_num), exploration_noise=True)
