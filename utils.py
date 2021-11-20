@@ -1,6 +1,10 @@
 import time
 import csv
-from graph_tool.all import *
+from graph_tool import Graph
+import shapely
+import geojson
+from shapely.geometry import Point, Polygon
+import numpy as np
 
 def parse_time(strtime: str):
     timeformat = '%Y-%m-%d %H:%M:%S UTC'
@@ -68,12 +72,27 @@ def construct_graph(filename):
     """
     Construct graph for the city
     """
-    alldaygraphs = [Graph(directed=False) for _ in range(24)]
+    alldaygraphs = []
     nodes = 608
-    
+    weights = []
+
+    for i in range(24):
+        g = Graph()
+        g.add_vertex(nodes + 1)
+        eweight = g.new_ep('double')
+        alldaygraphs.append(g)
+        weights.append(eweight)
+
+    """
+    Use graph_tool 
+    See https://graph-tool.skewed.de/static/doc/index.html
+    """
+   
     hours = [[] for _ in range(24)]
     minno = 1000
     maxno = 0
+    minh = 1000
+    maxh = -1
     with open(filename, 'r') as f:
         total = f.readlines()
         reader = csv.DictReader(total)
@@ -85,26 +104,62 @@ def construct_graph(filename):
             maxno = max(maxno, src)
             maxno = max(maxno, dst)
             hod = int(row['hod'])
-            time = float(row['mean_travel_time'])
-            hours[hod - 1].append((src, dst, time))
-    print('Min node %s Max node %s ' % (minno, maxno))
-    for cnt, hour in enumerate(hours):
-        print(" %s %s " % (cnt, len(hour)))
+            maxh = max(maxh, hod) 
+            minh = min(minh, hod)
+            duration = float(row['mean_travel_time'])
+            g = alldaygraphs[hod]
+            ew = weights[hod]
+            # Make sure no duplicate edges
+            assert g.edge(src, dst) == None 
+            g.add_edge(src, dst)
+            e = g.edge(src, dst)
+            ew[e] = duration
+    print('Min node %s Max node %s minh %s maxh %s' % (minno, maxno, minh, maxh))
 
-    """
-    Use graph_tool 
-    See https://graph-tool.skewed.de/static/doc/index.html
-    """
-    weights = []
-    for ind, g in enumerate(alldaygraphs):
-        g.add_vertex(nodes + 1)
-        eweight = g.new_ep('double')
-        g.add_edge_list(hours[ind], eprops=[eweight])
-        weights.append(eweight)
-    
     return alldaygraphs, weights
     
 
+def get_time_hod(src, dst, hod, alldaygraphs, weights):
+    e = alldaygraphs[hod].edge(src, dst)
+    durs = [weights[hours][alldaygraphs[hours].edge(src, dst)] if alldaygraphs[hours].edge(src, dst) != None else None for hours in range(24)]
+    durs = [dur for dur in durs if dur]
+    if e != None:
+        dur = weights[hod][e]
+        pass
+    elif len(durs) > 0:
+       dur = np.mean(durs)
+    else:
+        print("%s ->  %s hod %s not found" % (src, dst, hod)) 
+
+
+def check_time(src, dst, alldaygraphs, weights):
+    """
+    check that the duration data between src and dst exists
+    """
+    for hod, graph in enumerate(alldaygraphs):
+        get_time_hod(src, dst, hod, alldaygraphs, weights)
+
+def city_graph(gj_file, alldaygraphs, weights):
+
+    with open(gj_file, 'r') as f:
+        gj = geojson.load(f)
+    polys = [(ind + 1, Polygon(gj[ind]['geometry']['coordinates'][0][0])) for ind in range(608)]
+    print(gj[0]['geometry']['coordinates'][0][0])
+    print(list(polys[0][1].exterior.coords))
+    print(polys[0][1].area)
+
+    neighbors = {}
+    for cur_poly in polys:
+        neighbors[cur_poly[0]] = []
+        for cnt, ply in enumerate(polys):
+            if not cur_poly[1].disjoint(ply[1]) and cur_poly[0] != ply[0]:
+                neighbors[cur_poly[0]].append(ply[0])
+                check_time(cur_poly[0], ply[0], alldaygraphs, weights)
+
+    return neighbors
+
+
 if __name__ == '__main__':
     #read_input('download/Gridwise/gridwise_trips_sample_pit.csv')
-    construct_graph('download/pittsburgh-censustracts-2020-1-All-HourlyAggregate.csv')
+    graphs, weights = construct_graph('download/pittsburgh-censustracts-2020-1-All-HourlyAggregate.csv')
+    city_graph('download/pittsburgh_censustracts.json', graphs, weights)
