@@ -7,10 +7,9 @@ class DriverEnv(gym.Env):
 
     IDLE = 0
     TAKE_RIDER = 1
-    TAKE_FOOD = 2
-    def __init__(self, total_time, order_dict, max_repositions = 4, max_ride_requests=2):
+    def __init__(self, order_dict, max_repositions = 4, max_ride_requests=2):
         super(DriverEnv, self).__init__()
-        self.total_time = total_time
+        self.total_time = 24 * 3600
         self.timestamp = 0
         self.locations = max_repositions
         self.max_ride_requests = max_ride_requests  # maximum rider requests at a timestamp
@@ -33,8 +32,9 @@ class DriverEnv(gym.Env):
         """
         Dummy estimate the travel time, distance from src to dst
         Both dst and src are integers
+        return seconds
         """
-        return 10
+        return 600
 
     def estimate_trip(self, trip, src):
         """
@@ -46,14 +46,17 @@ class DriverEnv(gym.Env):
          'earning:'  float trip fee,
         }
         Estimate the duration, reward, and return the final location
-        after a rider order or a food deliver order
+        after a rider order
+        assume cost is 0.18 per mile and 30 mph average
+        # https://www.aqua-calc.com/calculate/car-fuel-consumption-and-cost
+        duration is always seconds
         """
         time = 0
-        dur = estimate_time(trip['src'], src)
+        dur = self.estimate_time(trip['src'], src)
         time += dur
-        reward = -2.5 * dur
+        reward = -0.0015 * dur
         time += trip['dur']
-        reward += -2.5 * dur
+        reward += -0.0015 * dur
         reward += trip['earnings']
         return time, reward, trip['dst']
 
@@ -96,7 +99,7 @@ class DriverEnv(gym.Env):
         if (action > self.locations and action - self.locations < len(trip_orders)):
             # Take a ride requests
             idle = False
-            trip = trip_orders[action - self.max_repositions]
+            trip = trip_orders[action - self.locations]
             duration, reward, dst = self.estimate_trip(trip, self.cur_location)
             self.timestamp += duration
             self.cur_location = dst
@@ -106,7 +109,7 @@ class DriverEnv(gym.Env):
             repo_loc = action + 1
             duration =  self.estimate_time(repo_loc, self.cur_location)
             self.timestamp +=  duration
-            reward = -2.5 * duration
+            reward = -0.0015 * duration
             self.cur_location = repo_loc
 
         done = False
@@ -128,7 +131,7 @@ if __name__ == '__main__':
     rider[1][0]['src'] = 100
     rider[1][0]['dst'] = 200
 
-    env = DriverEnv(24 * 6, rider)
+    env = DriverEnv(rider)
 
     print(env.observation_space.shape)
     print(env.action_space.shape)
@@ -140,11 +143,6 @@ if __name__ == '__main__':
         print(obs)
         print(obs.shape, reward, done, info)
 
-    env.reset()
-    print(env.step(50))
-    print(env.step(50))
-    print(env.step(50))
-    print(env.step(50))
 
     env.reset()
 
@@ -167,8 +165,8 @@ if __name__ == '__main__':
     net = Net(state_shape=state_shape, action_shape=action_shape, hidden_sizes=[128, 128, 128])
     optim = torch.optim.Adam(net.parameters(), lr=lr)
 
-    train_envs = ts.env.DummyVectorEnv([lambda: DriverEnv(24 * 6, rider) for _ in range(train_num)])
-    test_envs = ts.env.DummyVectorEnv([lambda: DriverEnv(24 * 6, rider) for _ in range(test_num)])
+    train_envs = ts.env.DummyVectorEnv([lambda: DriverEnv(rider) for _ in range(train_num)])
+    test_envs = ts.env.DummyVectorEnv([lambda: DriverEnv(rider) for _ in range(test_num)])
 
     policy = ts.policy.DQNPolicy(net, optim, gamma, n_step, target_update_freq=target_freq)
     train_collector = ts.data.Collector(policy, train_envs, ts.data.VectorReplayBuffer(buffer_size, train_num), exploration_noise=True)
