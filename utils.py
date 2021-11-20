@@ -1,6 +1,6 @@
 import time
 import csv
-
+from graph_tool.all import *
 
 def parse_time(strtime: str):
     timeformat = '%Y-%m-%d %H:%M:%S UTC'
@@ -68,8 +68,43 @@ def construct_graph(filename):
     """
     Construct graph for the city
     """
+    alldaygraphs = [Graph(directed=False) for _ in range(24)]
+    nodes = 608
+    
+    hours = [[] for _ in range(24)]
+    minno = 1000
+    maxno = 0
+    with open(filename, 'r') as f:
+        total = f.readlines()
+        reader = csv.DictReader(total)
+        for row in reader:
+            src = int(row['sourceid'])
+            dst = int(row['dstid'])
+            minno = min(minno, src)
+            minno = min(minno, dst)
+            maxno = max(maxno, src)
+            maxno = max(maxno, dst)
+            hod = int(row['hod'])
+            time = float(row['mean_travel_time'])
+            hours[hod - 1].append((src, dst, time))
+    print('Min node %s Max node %s ' % (minno, maxno))
+    for cnt, hour in enumerate(hours):
+        print(" %s %s " % (cnt, len(hour)))
+
+    """
+    Use graph_tool 
+    See https://graph-tool.skewed.de/static/doc/index.html
+    """
+    weights = []
+    for ind, g in enumerate(alldaygraphs):
+        g.add_vertex(nodes + 1)
+        eweight = g.new_ep('double')
+        g.add_edge_list(hours[ind], eprops=[eweight])
+        weights.append(eweight)
+    
+    return alldaygraphs, weights
     
 
 if __name__ == '__main__':
-    read_input('download/Gridwise/gridwise_trips_sample_pit.csv')
-
+    #read_input('download/Gridwise/gridwise_trips_sample_pit.csv')
+    construct_graph('download/pittsburgh-censustracts-2020-1-All-HourlyAggregate.csv')
