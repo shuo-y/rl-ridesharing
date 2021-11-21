@@ -7,7 +7,7 @@ import tianshou as ts
  
 
 def train_model(riders: dict):
-    env = DriverEnv(riders)
+    env = DriverEnv(riders, 608)
     # See https://github.com/thu-ml/tianshou/blob/master/README.md
     lr, epoch, batch_size = 1e-3, 1, 64
     train_num, test_num = 10, 100

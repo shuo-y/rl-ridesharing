@@ -15,8 +15,8 @@ class DriverEnv(gym.Env):
         self.max_ride_requests = max_ride_requests  # maximum rider requests at a timestamp
         # Total possible action
         self.action_space = spaces.Discrete(self.locations + self.max_ride_requests)
-        obs_space = self.max_ride_requests * 3  
-        self.observation_space = spaces.Box(low=-1, high=10000, shape=(obs_space,), dtype=np.float32)
+        obs_space = 2 + self.max_ride_requests * 3  # locations id + timestep + number of orders
+        self.observation_space = spaces.Box(low=-1, high=100000, shape=(obs_space,), dtype=np.float32)
         self.trip_map = order_dict  # Mapping timestamp to trip orders
         self.cur_available_rider = 1
         self.cur_location = 1 # TODO should be sampled from several locations
@@ -69,8 +69,8 @@ class DriverEnv(gym.Env):
 
         riders = [[trip_orders[i]['src'], trip_orders[i]['dst'], trip_orders[i]['earnings']] if i < len(trip_orders) else [0, 0, 0] for i in range(self.max_ride_requests)]
         riders = np.array(riders, dtype=np.int32).flatten()
-
-        
+        world_env = np.array([self.cur_location, self.timestamp])
+        riders = np.concatenate((world_env, riders))
         return riders
 
     def parse_action_old(self, action):
