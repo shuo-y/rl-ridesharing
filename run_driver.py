@@ -7,10 +7,10 @@ import tianshou as ts
 import numpy as np 
 import pickle
 
-def train_model(riders: dict, hourly_time, allday_time, isbaseline):
+def train_model(args, riders: dict, hourly_time, allday_time, isbaseline):
     env = DriverEnv(riders, hourly_time, allday_time, 608, baseline=isbaseline)
     # See https://github.com/thu-ml/tianshou/blob/master/README.md
-    lr, epoch, batch_size = 1e-3, 1, 64
+    lr, epoch, batch_size = 1e-3, args.epoch, 64
     train_num, test_num = 10, 100
     gamma, n_step, target_freq = 0.9, 3, 320
     buffer_size = 2000000
@@ -56,15 +56,27 @@ def eval_model(policy: ts.policy, dev_riders: dict, hourly_time, allday_time, is
         pass
         #print('%d,%f' % (cnt, item))
 
+import argparse
+import time
+import random
 if __name__ == '__main__':
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--epoch', type=int, default=10)
+    parser.add_argument('--seed', type=int, default=int(time.time()))
+    args = parser.parse_args()
+    print(args)
+    random.seed(args.seed)
+    np.random.seed(args.seed)
+    torch.manual_seed(args.seed)
+
     riders_train, riders_dev = read_input('download/Gridwise/gridwise_trips_sample_pit.csv')
     #graphs, weights = construct_graph('download/pittsburgh-censustracts-2020-1-All-HourlyAggregate.csv')
     hourly_time = pickle.load(open('download/hourly_time', 'rb'))
     allday_time = pickle.load(open('download/allday_time.debug', 'rb'))
-    policy = train_model(riders_train, hourly_time, allday_time, isbaseline=False)
+    policy = train_model(args, riders_train, hourly_time, allday_time, isbaseline=False)
     eval_model(policy, riders_dev, hourly_time, allday_time, isbaseline=False)
     print("Testing baseline")
-    policy = train_model(riders_train, hourly_time, allday_time, isbaseline=True)
+    policy = train_model(args, riders_train, hourly_time, allday_time, isbaseline=True)
     eval_model(policy, riders_dev, hourly_time, allday_time, isbaseline=True)
 
 
