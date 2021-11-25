@@ -72,7 +72,7 @@ if __name__ == '__main__':
     riders_train, riders_dev = read_input('download/Gridwise/gridwise_trips_sample_pit.csv')
     #graphs, weights = construct_graph('download/pittsburgh-censustracts-2020-1-All-HourlyAggregate.csv')
     hourly_time = pickle.load(open('download/hourly_time', 'rb'))
-    allday_time = pickle.load(open('download/allday_time.debug', 'rb'))
+    allday_time = pickle.load(open('download/allday_time', 'rb'))
     policy = train_model(args, riders_train, hourly_time, allday_time, isbaseline=False)
     eval_model(policy, riders_dev, hourly_time, allday_time, isbaseline=False)
     print("Testing baseline")
