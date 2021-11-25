@@ -3,7 +3,6 @@ import gym
 from gym import spaces
 import math
 import random
-from graph_tool import topology
 
 
 class DriverEnv(gym.Env):

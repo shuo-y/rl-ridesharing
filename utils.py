@@ -1,9 +1,5 @@
 import time
 import csv
-from graph_tool import Graph, topology
-import shapely
-import geojson
-from shapely.geometry import Point, Polygon
 import numpy as np
 
 def parse_time(strtime: str):
@@ -332,6 +328,10 @@ def city_graph(gj_file):
 
 import pickle
 if __name__ == '__main__':
+    import shapely
+    import geojson
+    from graph_tool import Graph, topology
+    from shapely.geometry import Point, Polygon
     #hourly_map = process_hourly_data('download/pitt2019-2020q1Allhour.csv')
     #pickle.dump(hourly_map, open('hourly_map', 'wb'))
     maps, graphs, weights = process_weekly_data('download/pitt2019-2020q1weekly.csv')
