@@ -2,30 +2,38 @@ import numpy as np
 import gym
 from gym import spaces
 import math
+import random
+from graph_tool import topology
+
 
 class DriverEnv(gym.Env):
 
-    IDLE = 0
-    TAKE_RIDER = 1
-    def __init__(self, order_dict, max_repositions = 4, max_ride_requests=2):
+    def __init__(self, order_dict, hourly_time, allday_time, max_repositions, max_ride_requests=2, baseline=False, interval=300):
         super(DriverEnv, self).__init__()
         self.total_time = 24 * 3600
         self.timestamp = 0
-        self.locations = max_repositions
+        self.baseline = baseline
+        self.max_repositions = max_repositions
+        self.interval = interval # interval of the orders inside a period
+        if self.baseline == False:
+            self.locations = max_repositions
+        else:
+            # if baseline is True
+            # never reposition at all
+            self.locations = 0
         self.max_ride_requests = max_ride_requests  # maximum rider requests at a timestamp
         # Total possible action
         self.action_space = spaces.Discrete(self.locations + self.max_ride_requests)
         obs_space = 2 + self.max_ride_requests * 3  # locations id + timestep + number of orders
         self.observation_space = spaces.Box(low=-1, high=100000, shape=(obs_space,), dtype=np.float32)
         self.trip_map = order_dict  # Mapping timestamp to trip orders
-        self.cur_available_rider = 1
-        self.cur_location = 1 # TODO should be sampled from several locations
-
+        self.cur_location = random.randint(1, max_repositions) # TODO should be sampled from several locations
+        self.hourly_time = hourly_time
+        self.allday_time = allday_time
 
     def reset(self):
         self.timestamp = 0
-        self.cur_available_rider = 1
-        self.cur_location = 0
+        self.cur_location = random.randint(1, self.max_repositions)
         return self.get_obs()
 
     def estimate_time(self, dst, src):
@@ -34,38 +42,24 @@ class DriverEnv(gym.Env):
         Both dst and src are integers
         return seconds
         """
-        return 600
+        dur = 0
+        hod = self.timestamp // 3600
+        if src == dst:
+            dur =  60
+        elif src in self.hourly_time and dst in self.hourly_time[src] and hod in self.hourly_time[src][dst][hod]:
+            dur = self.hourly_map[src][dst][hod]
+        else:
+            dur = self.allday_time[src][dst]
+        assert dur > 0
+        return dur
 
-    def estimate_trip(self, trip, src):
-        """
-        A trip
-        {'src': int request_location,
-         'dst_list': a list of int, 
-             if a rider order, only a single destination_location,
-             if a food deliever order, multiple destinations
-         'earning:'  float trip fee,
-        }
-        Estimate the duration, reward, and return the final location
-        after a rider order
-        assume cost is 0.18 per mile and 30 mph average
-        # https://www.aqua-calc.com/calculate/car-fuel-consumption-and-cost
-        duration is always seconds
-        """
-        time = 0
-        dur = self.estimate_time(trip['src'], src)
-        time += dur
-        reward = -0.0015 * dur
-        time += trip['dur']
-        reward += -0.0015 * dur
-        reward += trip['earnings']
-        return time, reward, trip['dst']
 
     def get_obs(self):
         """
         return an observation at a timestamp
         """
-
-        trip_orders = self.trip_map.get(self.timestamp, [])
+        
+        trip_orders = self.trip_map.get(self.timestamp // self.interval, [])
 
         riders = [[trip_orders[i]['src'], trip_orders[i]['dst'], trip_orders[i]['earnings']] if i < len(trip_orders) else [0, 0, 0] for i in range(self.max_ride_requests)]
         riders = np.array(riders, dtype=np.int32).flatten()
@@ -83,6 +77,7 @@ class DriverEnv(gym.Env):
     def sample_trip(self, trip_orders):
         """
         add randomness for the trip
+        TODO
         """
         return trip_orders
 
@@ -90,32 +85,50 @@ class DriverEnv(gym.Env):
         """
         action (dst_block_id, trip, food)
         """
-        trip_orders = self.trip_map.get(self.timestamp, [])
+        trip_orders = self.trip_map.get(self.timestamp // self.interval, [])
 
         trip_orders = self.sample_trip(trip_orders) # Sample from trip orders
-        idle = True
+        order_succ = False
+        repo_succ = False
         reward = 0
+         
+        if action >= self.locations or self.baseline == True:
+            if len(trip_orders) == 0:
+                # No order
+                # the driver stays the same location
+                self.timestamp += 60
+                reward = -0.0005
+            else:
+                # There is a order
+                # driver take the order
+                if action - self.locations < len(trip_orders):
+                    # Try to take a ride requests based on driver's preference
+                    trip = trip_orders[action - self.locations]
+                else:
+                    # just take the first order
+                    trip = trip_orders[0]
+
+                duration = self.estimate_time(trip['src'], self.cur_location)
+                order_succ = True
+                reward = (-0.0015 * (duration + trip['dur']) + trip['earnings'])
+                self.timestamp += (duration + trip['dur'])
+                self.cur_location = trip['dst']
         
-        if (action > self.locations and action - self.locations < len(trip_orders)):
-            # Take a ride requests
-            idle = False
-            trip = trip_orders[action - self.locations]
-            duration, reward, dst = self.estimate_trip(trip, self.cur_location)
-            self.timestamp += duration
-            self.cur_location = dst
         else:
-            # idle for one timestamp
+            # driver move to some other places
             # Action represents the locations
             repo_loc = action + 1
             duration =  self.estimate_time(repo_loc, self.cur_location)
-            self.timestamp +=  duration
+            repo_succ = True
+            self.timestamp += duration
             reward = -0.0015 * duration
             self.cur_location = repo_loc
+    
 
         done = False
         if self.timestamp >= self.total_time:
             done = True
-        info = {'loc': self.cur_location, 'time': self.timestamp}
+        info = {'loc': self.cur_location, 'time': self.timestamp, 'order_s': order_succ, 'repo_s': repo_succ}
         return self.get_obs(), reward, done, info
 
     def render(self, mode='console'):

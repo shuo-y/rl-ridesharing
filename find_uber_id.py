@@ -25,10 +25,13 @@ point = Point([-83.0072144, 39.9788975])
 from operator import itemgetter
 
 min_dist, min_id, min_poly = min(((poly.distance(point), ind, poly) for ind, poly in polys), key=itemgetter(0))
+min_dist, min_id, min_poly = min(((poly.distance(polys[0][1]), ind, poly) for ind, poly in polys[1:]), key=itemgetter(0))
 #check = [(poly.distance(point), ind, poly) for ind, poly in polys]
 #print(check)
 
-#print(min_dist, min_id, min_poly)
+print(polys[0][1])
+print(min_dist, min_id, min_poly)
+exit(0)
 
 import tempfile
 

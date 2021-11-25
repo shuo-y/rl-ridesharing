@@ -1,13 +1,14 @@
 from driver_env import DriverEnv
-from utils import read_input
+from utils import read_input, construct_graph
 import gym
 from gym import spaces
 import torch
 import tianshou as ts
- 
+import numpy as np 
+import pickle
 
-def train_model(riders: dict):
-    env = DriverEnv(riders, 608)
+def train_model(riders: dict, hourly_time, allday_time, isbaseline):
+    env = DriverEnv(riders, hourly_time, allday_time, 608, baseline=isbaseline)
     # See https://github.com/thu-ml/tianshou/blob/master/README.md
     lr, epoch, batch_size = 1e-3, 1, 64
     train_num, test_num = 10, 100
@@ -23,8 +24,8 @@ def train_model(riders: dict):
     net = Net(state_shape=state_shape, action_shape=action_shape, hidden_sizes=[128, 128, 128])
     optim = torch.optim.Adam(net.parameters(), lr=lr)
 
-    train_envs = ts.env.DummyVectorEnv([lambda: DriverEnv(riders) for _ in range(train_num)])
-    test_envs = ts.env.DummyVectorEnv([lambda: DriverEnv(riders) for _ in range(test_num)])
+    train_envs = ts.env.DummyVectorEnv([lambda: DriverEnv(riders, hourly_time, allday_time, 608, baseline=isbaseline) for _ in range(train_num)])
+    test_envs = ts.env.DummyVectorEnv([lambda: DriverEnv(riders, hourly_time, allday_time, 608, baseline=isbaseline) for _ in range(test_num)])
 
     policy = ts.policy.DQNPolicy(net, optim, gamma, n_step, target_update_freq=target_freq)
     print(type(policy))
@@ -41,8 +42,8 @@ def train_model(riders: dict):
     return policy
 
 
-def eval_model(policy: ts.policy, dev_riders: dict):
-    test_env = DriverEnv(dev_riders)
+def eval_model(policy: ts.policy, dev_riders: dict, hourly_time, allday_time, isbaseline):
+    test_env = DriverEnv(dev_riders, hourly_time, allday_time, 608, baseline=isbaseline)
     buf = ts.data.ReplayBuffer(2000000)
     test_collector = ts.data.Collector(policy, test_env, buf)
     result = test_collector.collect(n_episode=1)
@@ -50,10 +51,21 @@ def eval_model(policy: ts.policy, dev_riders: dict):
     print(buf)
     for item in dir(buf):
         print(item)
-
+    print('Sum rewards %f' % np.sum(buf.rew)) 
+    for cnt, item in enumerate(buf.rew):
+        pass
+        #print('%d,%f' % (cnt, item))
 
 if __name__ == '__main__':
     riders_train, riders_dev = read_input('download/Gridwise/gridwise_trips_sample_pit.csv')
-    policy = train_model(riders_train)
-    eval_model(policy, riders_dev)
+    #graphs, weights = construct_graph('download/pittsburgh-censustracts-2020-1-All-HourlyAggregate.csv')
+    hourly_time = pickle.load(open('download/hourly_time', 'rb'))
+    allday_time = pickle.load(open('download/allday_time.debug', 'rb'))
+    policy = train_model(riders_train, hourly_time, allday_time, isbaseline=False)
+    eval_model(policy, riders_dev, hourly_time, allday_time, isbaseline=False)
+    print("Testing baseline")
+    policy = train_model(riders_train, hourly_time, allday_time, isbaseline=True)
+    eval_model(policy, riders_dev, hourly_time, allday_time, isbaseline=True)
+
+
 
