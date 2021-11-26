@@ -3,7 +3,7 @@ import gym
 from gym import spaces
 import math
 import random
-
+import torch
 
 class DriverEnv(gym.Env):
 
@@ -29,6 +29,7 @@ class DriverEnv(gym.Env):
         self.cur_location = random.randint(1, max_repositions) # TODO should be sampled from several locations
         self.hourly_time = hourly_time
         self.allday_time = allday_time
+        self.distri = torch.distributions.Normal(0, 1000)
 
     def reset(self):
         self.timestamp = 0
@@ -59,7 +60,8 @@ class DriverEnv(gym.Env):
         """
         
         trip_orders = self.trip_map.get(self.timestamp // self.interval, [])
-
+        trip_orders = self.sample_trip(trip_orders) # Sample from trip orders
+        self.trip_orders_cache = trip_orders
         riders = [[trip_orders[i]['src'], trip_orders[i]['dst'], trip_orders[i]['earnings']] if i < len(trip_orders) else [0, 0, 0] for i in range(self.max_ride_requests)]
         riders = np.array(riders, dtype=np.int32).flatten()
         world_env = np.array([self.cur_location, self.timestamp])
@@ -75,18 +77,24 @@ class DriverEnv(gym.Env):
 
     def sample_trip(self, trip_orders):
         """
-        add randomness for the trip
-        TODO
+        sample orders based on normal distributions
         """
-        return trip_orders
+        if len(trip_orders) == 0:
+            return trip_orders
+
+        rc_orders = []
+        for trip in trip_orders:
+            dur = self.estimate_time(trip['src'], self.cur_location)
+            if dur < torch.abs(self.distri.sample()).item():
+                rc_orders.append(trip)
+        return rc_orders
 
     def step(self, action):
         """
         action (dst_block_id, trip, food)
         """
-        trip_orders = self.trip_map.get(self.timestamp // self.interval, [])
+        trip_orders = self.trip_orders_cache
 
-        trip_orders = self.sample_trip(trip_orders) # Sample from trip orders
         order_succ = False
         repo_succ = False
         reward = 0
