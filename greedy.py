@@ -38,13 +38,18 @@ class Driver:
         
         print("Total_rewards %lf" % total_rewards)
 
-
+import argparse
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--repeat', type=int, default=1)
+    args = parser.parse_args()
+
     hourly_time = pickle.load(open('download/hourly_time', 'rb'))
     allday_time = pickle.load(open('download/allday_time', 'rb'))
 
     riders_train, riders_dev = read_input('download/Gridwise/gridwise_trips_sample_pit.csv')
     env = DriverEnv(riders_dev, hourly_time, allday_time, 608, baseline=False)
 
-    driver = Driver(env, 608, 2)
-    driver.roundout()
+    for i in range(args.repeat):
+        driver = Driver(env, 608, 2)
+        driver.roundout()
