@@ -7,7 +7,7 @@ import torch
 
 class DriverEnv(gym.Env):
 
-    def __init__(self, order_dict, hourly_time, allday_time, max_repositions, max_ride_requests=2, baseline=False, interval=300):
+    def __init__(self, order_dict, hourly_time, allday_time, max_repositions, max_ride_requests=2, baseline=False, interval=300, sample=False):
         super(DriverEnv, self).__init__()
         self.total_time = 24 * 3600
         self.timestamp = 0
@@ -29,7 +29,8 @@ class DriverEnv(gym.Env):
         self.cur_location = random.randint(1, max_repositions) # TODO should be sampled from several locations
         self.hourly_time = hourly_time
         self.allday_time = allday_time
-        self.distri = torch.distributions.Normal(0, 1000)
+        self.distri = torch.distributions.Normal(0, 100)
+        self.sample_p = sample
 
     def reset(self):
         self.timestamp = 0
@@ -60,7 +61,8 @@ class DriverEnv(gym.Env):
         """
         
         trip_orders = self.trip_map.get(self.timestamp // self.interval, [])
-        trip_orders = self.sample_trip(trip_orders) # Sample from trip orders
+        if not self.sample_p:
+            trip_orders = self.sample_trip(trip_orders) # Sample from trip orders
         self.trip_orders_cache = trip_orders
         riders = [[trip_orders[i]['src'], trip_orders[i]['dst'], trip_orders[i]['earnings']] if i < len(trip_orders) else [0, 0, 0] for i in range(self.max_ride_requests)]
         riders = np.array(riders, dtype=np.int32).flatten()
@@ -79,6 +81,7 @@ class DriverEnv(gym.Env):
         """
         sample orders based on normal distributions
         """
+        return trip_orders
         if len(trip_orders) == 0:
             return trip_orders
 
