@@ -70,6 +70,7 @@ if __name__ == '__main__':
     parser.add_argument('--test_baseline', dest='test_baseline', action='store_true')
     parser.add_argument('--step_per_epoch', type=int, default=100000)
     parser.add_argument('--step_per_collect', type=int, default=10)
+    parser.add_argument('--model_prefix', type=str, default='./model/')
     args = parser.parse_args()
     print(args)
     random.seed(args.seed)
@@ -82,7 +83,7 @@ if __name__ == '__main__':
     allday_time = pickle.load(open('download/allday_time', 'rb'))
     policy = train_model(args, riders_train, hourly_time, allday_time, isbaseline=False)
 
-    torch.save(policy.state_dict(), 'dqn_train.pth')
+    torch.save(policy.state_dict(), args.model_prefix + 'dqn_train.pth')
     eval_model(policy, riders_dev, hourly_time, allday_time, isbaseline=False)
 
     if args.test_baseline:
