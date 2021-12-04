@@ -61,7 +61,7 @@ class DriverEnv(gym.Env):
         """
         
         trip_orders = self.trip_map.get(self.timestamp // self.interval, [])
-        if not self.sample_p:
+        if self.sample_p:
             trip_orders = self.sample_trip(trip_orders) # Sample from trip orders
         self.trip_orders_cache = trip_orders
         riders = [[trip_orders[i]['src'], trip_orders[i]['dst'], trip_orders[i]['earnings']] if i < len(trip_orders) else [0, 0, 0] for i in range(self.max_ride_requests)]
@@ -81,7 +81,6 @@ class DriverEnv(gym.Env):
         """
         sample orders based on normal distributions
         """
-        return trip_orders
         if len(trip_orders) == 0:
             return trip_orders
 
