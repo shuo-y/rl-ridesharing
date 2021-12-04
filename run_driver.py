@@ -11,11 +11,13 @@ def train_model(args, riders: dict, hourly_time, allday_time, isbaseline):
     env = DriverEnv(riders, hourly_time, allday_time, 608, baseline=isbaseline)
     # See https://github.com/thu-ml/tianshou/blob/master/README.md
     lr, epoch, batch_size = 1e-3, args.epoch, 64
-    train_num, test_num = 10, 100
+    from torch.utils.tensorboard import SummaryWriter
+    logger = ts.utils.TensorboardLogger(SummaryWriter(args.logger))
+    train_num, test_num = 100, 100
     gamma, n_step, target_freq = 0.9, 3, 320
     buffer_size = 2000000
     eps_train, eps_test = 0.1, 0.05
-    step_per_epoch, step_per_collect = 10000, 10
+    step_per_epoch, step_per_collect = 100000, 10
 
     state_shape = env.observation_space.shape or env.observation_space.n
     action_shape = env.action_space.shape or env.action_space.n
@@ -37,7 +39,8 @@ def train_model(args, riders: dict, hourly_time, allday_time, isbaseline):
         policy, train_collector, test_collector, epoch, step_per_epoch, step_per_collect,
         test_num, batch_size, update_per_step=1 / step_per_collect,
         train_fn=lambda epoch, env_step: policy.set_eps(eps_train),
-        test_fn=lambda epoch, env_step: policy.set_eps(eps_test))
+        test_fn=lambda epoch, env_step: policy.set_eps(eps_test),
+        logger=logger)
     print(f'Finished training! Use {result["duration"]}')
     return policy
 
@@ -62,7 +65,9 @@ import random
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--epoch', type=int, default=10)
+    parser.add_argument('--logger', type=str, default='./log/train')
     parser.add_argument('--seed', type=int, default=int(time.time()))
+    parser.add_argument('--test_baseline', dest='test_baseline', action='store_true')
     args = parser.parse_args()
     print(args)
     random.seed(args.seed)
@@ -75,9 +80,11 @@ if __name__ == '__main__':
     allday_time = pickle.load(open('download/allday_time', 'rb'))
     policy = train_model(args, riders_train, hourly_time, allday_time, isbaseline=False)
     eval_model(policy, riders_dev, hourly_time, allday_time, isbaseline=False)
-    print("Testing baseline")
-    policy = train_model(args, riders_train, hourly_time, allday_time, isbaseline=True)
-    eval_model(policy, riders_dev, hourly_time, allday_time, isbaseline=True)
+
+    if args.test_baseline:
+        print("Testing baseline")
+        policy = train_model(args, riders_train, hourly_time, allday_time, isbaseline=True)
+        eval_model(policy, riders_dev, hourly_time, allday_time, isbaseline=True)
 
 
 
