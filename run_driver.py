@@ -17,7 +17,7 @@ def train_model(args, riders: dict, hourly_time, allday_time, isbaseline):
     gamma, n_step, target_freq = 0.9, 3, 320
     buffer_size = 2000000
     eps_train, eps_test = 0.1, 0.05
-    step_per_epoch, step_per_collect = 100000, 10
+    step_per_epoch, step_per_collect = args.step_per_epoch, args.step_per_collect
 
     state_shape = env.observation_space.shape or env.observation_space.n
     action_shape = env.action_space.shape or env.action_space.n
@@ -68,6 +68,8 @@ if __name__ == '__main__':
     parser.add_argument('--logger', type=str, default='./log/train')
     parser.add_argument('--seed', type=int, default=int(time.time()))
     parser.add_argument('--test_baseline', dest='test_baseline', action='store_true')
+    parser.add_argument('--step_per_epoch', type=int, default=100000)
+    parser.add_argument('--step_per_collect', type=int, default=10)
     args = parser.parse_args()
     print(args)
     random.seed(args.seed)
@@ -79,6 +81,8 @@ if __name__ == '__main__':
     hourly_time = pickle.load(open('download/hourly_time', 'rb'))
     allday_time = pickle.load(open('download/allday_time', 'rb'))
     policy = train_model(args, riders_train, hourly_time, allday_time, isbaseline=False)
+
+    torch.save(policy.state_dict(), 'dqn_train.pth')
     eval_model(policy, riders_dev, hourly_time, allday_time, isbaseline=False)
 
     if args.test_baseline:
