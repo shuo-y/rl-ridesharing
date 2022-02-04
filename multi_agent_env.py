@@ -119,11 +119,13 @@ class UCBagent():
             self.prev_act = action
             self.cnts[action] += 1
         else:
-            print("step %d cnts %s rewards %s" % (self.step, self.cnts, self.rewards))
             reward = 1.0 - loss
             cnt = self.cnts[self.prev_act]
             self.rewards[self.prev_act] = self.rewards[self.prev_act] * (1.0  - 1.0/cnt) + reward /cnt
-            action = np.argmax(self.rewards)
+            #print("step %d cnts %s rewards %s" % (self.step, self.cnts, self.rewards))
+            ucbounds = self.rewards + np.sqrt(2 * np.log(self.step) / self.cnts)
+            #print(ucbounds)
+            action = np.argmax(ucbounds)
             self.prev_act = action
             self.cnts[action] += 1
         self.step += 1
@@ -193,12 +195,13 @@ import argparse
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--useUCB', default=False, action='store_true')
+    parser.add_argument('--mixUCBPW', default=False, action='store_true')
     args = parser.parse_args()
     print(args)
 
     num_arms = 10
     num_agents = 2
-    round = 300
+    round = 3000
     commit_rounds = 5
     env = MultiDriverEnv(num_arms, num_agents)
 
@@ -210,6 +213,9 @@ if __name__ == '__main__':
 
     if args.useUCB == True:
         agents = [UCBagent(num_arms) for _ in range(num_agents)]
+    elif args.mixUCBPW == True:
+        agents[0] = UCBagent(num_arms) 
+        agents[1] = Agent(num_arms, num_arms + commit_rounds) 
 
     actions = [agent.act(1.0) for agent in agents]
     print(actions)
@@ -220,5 +226,5 @@ if __name__ == '__main__':
             print(" ")
         actions = [agents[i].act(loss_n[i]) for i in range(num_agents)]
         if step % (num_arms + commit_rounds) == num_arms:
-            print("Check action %s" % actions)
+            print("Step: %d Check action %s" % (step, actions))
     
