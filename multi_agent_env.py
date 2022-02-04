@@ -2,6 +2,7 @@ import numpy as np
 import torch
 import gym
 from gym import spaces
+import random
 
 
 class MultiDriverEnv(gym.Env):
@@ -15,24 +16,40 @@ class MultiDriverEnv(gym.Env):
         obs_space = num_agents # First consider bandit case each agent has a single loss
         self.observation_space = spaces.Box(low=-1, high=100000, shape=(obs_space,), dtype=np.float32)
         # TODO check what kinds of distribution makes sense
-        alpha_n = [0.2 for _ in range(self.arms)]
-        beta_n = [0.5 for _ in range(self.arms)]
-        self.total_loss_samples = [torch.distributions.beta.Beta(torch.tensor(alpha_n[i]), torch.tensor(beta_n[i])) 
+        center = 5
+        alpha_n = [i for i in range(1, self.arms + 1)]
+        if center not in alpha_n:
+            alpha_n[-1] = center 
+        beta_n = [center for _ in range(self.arms)]
+        self.compute_opt(alpha_n, beta_n)
+        # The last arm's average loss is 0.5
+        print("Init beta distributions for arm alpha=%s  beta=%s " % (alpha_n, beta_n))
+        self.total_loss_samples = [torch.distributions.beta.Beta(
+                                   torch.tensor(alpha_n[i], dtype=torch.float), torch.tensor(beta_n[i], dtype=torch.float)) 
                                    for i in range(self.arms)]
         # TODO the loss should between [0, 1]
         # current loss on each arm not depends on specific agents
         # even only assume loss on each arm only depends on num
         # it is a different case
 
+    def compute_opt(self, alpha_n, beta_n):
+        alphas = np.array(alpha_n)
+        betas = np.array(beta_n)
+        mus = alphas / (alphas + betas)
+        print("loss of all arms")
+        print(mus)
+        print([0.5 + 0.5 * mu for mu in mus])
+        print("")
+
     def compute_loss_arm(self, arm_id, agent_list, loss):
         # Compute the total loss on a pulled arm
         # and then compute the loss of each agent on that arm
         arm_sample = self.total_loss_samples[arm_id]
-        arm_loss = arm_sample.sample()
+        arm_loss = arm_sample.sample().item()
         # Assume each agent divides them
-        loss_val = arm_loss / len(agent_list)
+        loss_val = 1.0 - 1.0/len(agent_list) + arm_loss / len(agent_list)
         for agent_id in agent_list:
-            loss[agent_id] = loss_val.item()
+            loss[agent_id] = loss_val
 
     def step(self, action_n):
         # Multiple agents 
@@ -86,6 +103,9 @@ class Agent:
         self.pwagent = FIBagent(arms)
         self.prev_act = 0
         self.sample_loss = np.zeros(arms)
+        # For permutation of the arms
+        self.perm = [i for i in range(arms)]
+        random.shuffle(self.perm)
         # First explore and them commit
         # Compute the weights and then average them
 
@@ -100,12 +120,12 @@ class Agent:
         if self.step % self.block_size == 0:
             # sample the first arm 
             # no need to use the loss
-            action = 0
+            action = self.perm[0]
             self.prev_act = action
         elif self.step % self.block_size < self.arms:
             # sample 1, ..., N - 1 arm
             self.sample_loss[self.prev_act] = loss
-            action = self.step % self.block_size
+            action = self.perm[self.step % self.block_size]
             self.prev_act = action
         elif self.step % self.block_size == self.arms:
             # First action after exploration
@@ -113,6 +133,9 @@ class Agent:
             self.sample_loss[self.prev_act] = loss
             self.pwagent.update_weights(self.sample_loss)
 
+            print("Check weights for Fully observed")
+            print(self.pwagent.weights)
+            
             action = self.pick_action()
             self.prev_act = action
         elif self.step % self.block_size > self.arms:
@@ -130,7 +153,7 @@ class Agent:
 if __name__ == '__main__':
     num_arms = 10
     num_agents = 2
-    round = 100
+    round = 300
     commit_rounds = 5
     env = MultiDriverEnv(num_arms, num_agents)
 
@@ -144,8 +167,10 @@ if __name__ == '__main__':
     print(actions)
     for step in range(1, round):
         loss_n = env.step(actions)
-        print(loss_n)
-        print(" ")
+        if step % (num_arms + commit_rounds) == (1 + num_arms):
+            print(loss_n)
+            print(" ")
         actions = [agents[i].act(loss_n[i]) for i in range(num_agents)]
-        print(actions)
+        if step % (num_arms + commit_rounds) == num_arms:
+            print("Check action %s" % actions)
     
