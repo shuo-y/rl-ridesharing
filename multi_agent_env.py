@@ -75,11 +75,13 @@ class FIBagent:
     A class represents a full information procedure
     external regret algorithm
     using polynomial weights algorithm
+    Based on 4.3.3 section of Algorithmic Game Theory
+    see https://www.cs.cmu.edu/~sandholm/cs15-892F13/algorithmic-game-theory.pdf
     """
 
-    def __init__(self, arms, eta = 0.5):
-        self.arms = arms
-        self.weights = np.ones(self.arms)
+    def __init__(self, num_arms, eta = 0.5):
+        self.num_arms = num_arms
+        self.weights = np.ones(self.num_arms)
         self.step = 0
         self.eta = eta
 
@@ -87,9 +89,46 @@ class FIBagent:
         """
         loss is a self.arms vector
         """
-        self.weights = self.weights - self.weights * loss
+
+        self.weights = self.weights - self.eta * self.weights * loss
         self.step += 1
         
+class UCBagent():
+
+    def __init__(self, num_arms):
+        self.num_arms = num_arms
+        self.rewards = np.zeros(num_arms)
+        self.cnts = np.zeros(num_arms)
+        self.step = 0
+        self.prev_act = 0
+        self.perm = [i for i in range(num_arms)]
+        random.shuffle(self.perm)
+    
+    def act(self, loss):
+        action = 0
+        if self.step == 0:
+            action = self.perm[0]
+            self.prev_act = action
+            self.cnts[action] += 1
+        elif self.step > 0 and self.step < self.num_arms:
+            reward = 1.0 - loss
+            cnt = self.cnts[self.prev_act]
+            self.rewards[self.prev_act] = self.rewards[self.prev_act] * (1.0  - 1.0/cnt) + reward /cnt
+            # Pick each arm once
+            action = self.perm[self.step]
+            self.prev_act = action
+            self.cnts[action] += 1
+        else:
+            print("step %d cnts %s rewards %s" % (self.step, self.cnts, self.rewards))
+            reward = 1.0 - loss
+            cnt = self.cnts[self.prev_act]
+            self.rewards[self.prev_act] = self.rewards[self.prev_act] * (1.0  - 1.0/cnt) + reward /cnt
+            action = np.argmax(self.rewards)
+            self.prev_act = action
+            self.cnts[action] += 1
+        self.step += 1
+        return action
+
 
 class Agent:
 
@@ -150,7 +189,13 @@ class Agent:
         selt.step = 0
         self.pwagent = FIBagent(self.arms)
 
+import argparse
 if __name__ == '__main__':
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--useUCB', default=False, action='store_true')
+    args = parser.parse_args()
+    print(args)
+
     num_arms = 10
     num_agents = 2
     round = 300
@@ -163,9 +208,12 @@ if __name__ == '__main__':
 
     agents = [Agent(num_arms, num_arms + commit_rounds) for _ in range(num_agents)]
 
+    if args.useUCB == True:
+        agents = [UCBagent(num_arms) for _ in range(num_agents)]
+
     actions = [agent.act(1.0) for agent in agents]
     print(actions)
-    for step in range(1, round):
+    for step in range(1, round + 1):
         loss_n = env.step(actions)
         if step % (num_arms + commit_rounds) == (1 + num_arms):
             print(loss_n)
