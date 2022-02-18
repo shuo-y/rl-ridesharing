@@ -5,9 +5,10 @@ from gym import spaces
 import random
 
 
-class MultiDriverEnv(gym.Env):
+# This is for multi-agent multi-armed bandit
+class MultiAgentMAB(gym.Env):
     def __init__(self, arms, num_agents, interval=300):
-        super(MultiDriverEnv, self).__init__()
+        super(MultiAgentMAB, self).__init__()
         self.total_time = 24 * 3600
         self.arms = arms
         self.num_agents = num_agents
@@ -203,7 +204,7 @@ if __name__ == '__main__':
     num_agents = 2
     round = 3000
     commit_rounds = 5
-    env = MultiDriverEnv(num_arms, num_agents)
+    env = MultiAgentMAB(num_arms, num_agents)
 
     # print(env.step([0, 2, 2]))
     # What if agents sample in the same order
