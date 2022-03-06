@@ -14,6 +14,14 @@ gj_file = 'download/pittsburgh_censustracts.json'
 with open(gj_file) as f:
     gj = geojson.load(f)
 
+"""
+Check to make sure the MOVEMENT_ID is from 1 to 608
+for ind in range(608):
+    print(gj[ind]["properties"]["MOVEMENT_ID"])
+    if int(gj[ind]["properties"]["MOVEMENT_ID"]) != ind + 1:
+        print("error check %s movement id " % gj[ind]["properties"]["MOVEMENT_ID"])
+
+"""
 
 
 polys = [(ind + 1, Polygon(gj[ind]['geometry']['coordinates'][0][0])) for ind in range(608)]
